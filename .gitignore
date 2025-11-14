@@ -1,0 +1,4 @@
+# Ignore only node modules
+node_modules/
+
+test-page.html
