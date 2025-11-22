@@ -29,7 +29,7 @@ if (ignoreCertErrors) {
   } catch {}
 }
 
-const downloads = new Map(); 
+const downloads = new Map();
 function broadcast(win, channel, payload) {
   if (win && !win.isDestroyed()) {
     try {
@@ -60,19 +60,15 @@ function toRecord(id, item, extra = {}) {
   };
 }
 
-// Global context menu for all web contents (BrowserWindow + <webview>)
 app.on("web-contents-created", (_event, contents) => {
-  // Handle new window requests (like Ctrl+click) - redirect to new tab instead
   contents.setWindowOpenHandler(({ url, disposition }) => {
     console.log("Window open request:", { url, disposition });
-    // Check if this is a Ctrl+click or middle-click (which should open in new tab)
     if (
       disposition === "new-window" ||
       disposition === "foreground-tab" ||
       disposition === "background-tab"
     ) {
       console.log("Creating new tab for URL:", url);
-      // Find the main window and send IPC message to create new tab
       const mainWindow = BrowserWindow.getAllWindows().find(
         (win) => !win.isDestroyed()
       );
@@ -82,15 +78,13 @@ app.on("web-contents-created", (_event, contents) => {
       } else {
         console.log("No main window found");
       }
-      return { action: "deny" }; // Prevent the new window from opening
+      return { action: "deny" };
     }
-    // For other cases, allow default behavior
     console.log("Allowing default window behavior");
     return { action: "allow" };
   });
 
   contents.on("context-menu", (event, params) => {
-    // Build dynamic context menu based on click context
     const template = [];
 
     const hasTextSelection = (params.selectionText || "").trim().length > 0;
@@ -99,7 +93,6 @@ app.on("web-contents-created", (_event, contents) => {
     const isEditable = !!params.isEditable;
     const editFlags = params.editFlags || {};
 
-    // Navigation controls (useful in webviews)
     template.push({
       label: "Back",
       enabled: contents.canGoBack?.() || false,
@@ -115,10 +108,8 @@ app.on("web-contents-created", (_event, contents) => {
       click: () => contents.reload?.(),
     });
 
-    // Separator
     template.push({ type: "separator" });
 
-    // Link actions
     if (hasLink) {
       template.push({
         label: "Open Link in Browser",
@@ -143,7 +134,6 @@ app.on("web-contents-created", (_event, contents) => {
       });
     }
 
-    // Image actions
     if (hasImage) {
       template.push({
         label: "Open Image in Browser",
@@ -157,7 +147,6 @@ app.on("web-contents-created", (_event, contents) => {
         label: "Save Image As…",
         click: () => {
           try {
-            // Trigger Chromium download flow; our 'will-download' handler will prompt Save As
             const ses = contents.session || session.defaultSession;
             ses.downloadURL(params.srcURL);
           } catch {
@@ -171,7 +160,6 @@ app.on("web-contents-created", (_event, contents) => {
 
     if (hasLink || hasImage) template.push({ type: "separator" });
 
-    // Editing actions (inputs, text fields)
     if (isEditable) {
       template.push(
         { label: "Undo", role: "undo", enabled: !!editFlags.canUndo },
@@ -193,7 +181,6 @@ app.on("web-contents-created", (_event, contents) => {
       template.push({ type: "separator" });
     }
 
-    // Inspect element (handy for dev and user)
     template.push({
       label: "Inspect Element",
       click: () => contents.inspectElement?.(params.x, params.y),
@@ -213,13 +200,12 @@ app.on("ready", () => {
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
-      webviewTag: true, // enables <webview>
+      webviewTag: true,
     },
   });
 
   win.loadFile("out/index.html");
 
-  // Show maximized once the window is ready to avoid resize/flicker
   win.once("ready-to-show", () => {
     try {
       win.maximize();
@@ -227,16 +213,13 @@ app.on("ready", () => {
     win.show();
   });
 
-  // Handle downloads from any webContents (including <webview>) in the default session
   const ses = session.defaultSession;
   ses.on("will-download", async (event, item) => {
     try {
-      // Pause until user picks a save path
       item.pause?.();
       const filename = item.getFilename?.() || "download";
       const defaultPath = path.join(app.getPath("downloads"), filename);
 
-      // Create record early as paused, no path yet
       const id = `${Math.floor(
         (item.getStartTime?.() || Date.now() / 1000) * 1000
       )}-${filename}`;
@@ -263,7 +246,6 @@ app.on("ready", () => {
       try {
         item.setSavePath?.(filePath);
       } catch {}
-      // Resume and mark progressing
       try {
         item.resume?.();
       } catch {}
@@ -289,12 +271,10 @@ app.on("ready", () => {
         broadcast(win, "downloads::update", { type: "done", record: recDone });
       });
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.error("Error in will-download handler:", err);
     }
   });
 
-  // IPC handlers
   ipcMain.handle("downloads::list", () => {
     return Array.from(downloads.values()).map((v) => v.rec);
   });
@@ -331,11 +311,9 @@ app.on("ready", () => {
   ipcMain.on("downloads::open-folder", () => {
     try {
       const folderPath = app.getPath("downloads");
-      // Use pathToFileURL for the downloads folder URI to ensure proper encoding and reliability across platforms
       const uri = pathToFileURL(folderPath).toString();
       shell.openExternal(uri);
     } catch {
-      // Fallback
       shell.openPath(app.getPath("downloads"));
     }
   });
@@ -359,7 +337,6 @@ app.on("ready", () => {
       const sesToUse = session.defaultSession;
       sesToUse.downloadURL(url);
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.error("Failed to trigger downloadURL:", err);
     }
   });
@@ -368,12 +345,10 @@ app.on("ready", () => {
   const https = require("https");
   const { URL, pathToFileURL } = require("url");
 
-  // Direct download fallback using Node's HTTP(S) (uses OpenSSL, bypasses Chromium/NSS)
   async function startDirectDownload(urlStr) {
     try {
       const u = new URL(urlStr);
       const client = u.protocol === "https:" ? https : http;
-      // Determine a default filename then prompt user to pick destination
       const guessedName = path.basename(u.pathname) || "download";
       const defaultPath = path.join(app.getPath("downloads"), guessedName);
       const { canceled, filePath: chosenPath } = await dialog.showSaveDialog(
@@ -399,7 +374,6 @@ app.on("ready", () => {
             res.statusCode < 400 &&
             res.headers.location
           ) {
-            // follow redirect once or recursively
             req.destroy();
             return startDirectDownload(
               new URL(res.headers.location, urlStr).toString()
